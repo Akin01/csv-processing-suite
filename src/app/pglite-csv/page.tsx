@@ -5,6 +5,7 @@ import { PgliteCsvProcessor } from "@/components/processors/pglite-csv-processor
 // Import the new official provider wrapper
 import { OfficialPGliteProviderWrapper } from "@/providers/official-pglite-provider";
 import { PGliteOpfsManager } from "@/components/ui/pglite-opfs-manager";
+import { DatabaseInfoPanel } from "@/components/ui/database-info-panel"; // Import the new component
 
 export default function PgliteCsvPage() {
   // dataDir is now primarily managed by the OfficialPGliteProviderWrapper,
@@ -41,43 +42,8 @@ export default function PgliteCsvPage() {
               {/* PGliteOpfsManager might still need dataDir if it operates independently */}
               <PGliteOpfsManager dataDir={pageDataDir} />
               
-              {/* Database Information Panel */}
-              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 border border-gray-200 dark:border-gray-700">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                  Database Information
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <span className="text-gray-600 dark:text-gray-400">Storage Type:</span>
-                      <span className="text-gray-900 dark:text-white font-medium">IndexedDB</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600 dark:text-gray-400">Database Path:</span>
-                      {/* Display the dataDir used by the provider/page */}
-                      <span className="text-gray-900 dark:text-white font-mono text-xs">{pageDataDir}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600 dark:text-gray-400">Worker Mode:</span>
-                      <span className="text-green-600 dark:text-green-400 font-medium">Enabled</span>
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <span className="text-gray-600 dark:text-gray-400">Multi-tab Support:</span>
-                      <span className="text-green-600 dark:text-green-400 font-medium">Yes</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600 dark:text-gray-400">Streaming:</span>
-                      <span className="text-green-600 dark:text-green-400 font-medium">Enabled</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600 dark:text-gray-400">Gzip Support:</span>
-                      <span className="text-green-600 dark:text-green-400 font-medium">Automatic</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              {/* Use the new DatabaseInfoPanel component */}
+              <DatabaseInfoPanel dataDir={pageDataDir} />
             </div>
           </div>
         </div>

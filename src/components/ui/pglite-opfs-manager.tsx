@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useCallback, useEffect } from "react";
-import { usePGlite } from "@/providers/pglite-provider";
+// Updated import for the official PGlite React hook
+import { usePGlite } from "@electric-sql/pglite-react";
 
 interface PGliteOpfsManagerProps {
   dataDir: string;
@@ -17,13 +18,20 @@ interface TableInfo {
 }
 
 export function PGliteOpfsManager({ dataDir, className }: PGliteOpfsManagerProps) {
-  const { db, isReady, isLoading, error: dbError, reinitializeInstance } = usePGlite(dataDir, true);
+  // Use the official PGlite hook. It returns the db instance or null.
+  const db = usePGlite();
+  // isLoading, isReady, dbError, reinitializeInstance are no longer available from this hook.
+  // The OfficialPGliteProviderWrapper handles initial loading.
+
   const [tables, setTables] = useState<TableInfo[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null); // Local error state for this component's operations
 
   const refreshTables = useCallback(async () => {
-    if (!db || !isReady) return;
+    if (!db) { // Check if db instance is available
+      setError("Database not available for refreshing tables.");
+      return;
+    }
 
     setIsRefreshing(true);
     setError(null);
@@ -96,10 +104,13 @@ export function PGliteOpfsManager({ dataDir, className }: PGliteOpfsManagerProps
     } finally {
       setIsRefreshing(false);
     }
-  }, [db, isReady]);
+  }, [db]); // Removed isReady from dependencies
 
   const deleteTable = useCallback(async (tableName: string) => {
-    if (!db || !isReady) return;
+    if (!db) { // Check if db instance is available
+      setError("Database not available for deleting table.");
+      return;
+    }
 
     if (!confirm(`Are you sure you want to delete table "${tableName}"? This action cannot be undone.`)) {
       return;
@@ -124,10 +135,13 @@ export function PGliteOpfsManager({ dataDir, className }: PGliteOpfsManagerProps
       console.error(`Error deleting table ${tableName}:`, err);
       setError(`Failed to delete table: ${(err as Error).message}`);
     }
-  }, [db, isReady, refreshTables]);
+  }, [db, refreshTables]); // Removed isReady from dependencies
 
   const clearAllTables = useCallback(async () => {
-    if (!db || !isReady) return;
+    if (!db) { // Check if db instance is available
+      setError("Database not available for clearing tables.");
+      return;
+    }
 
     if (!confirm("Are you sure you want to delete ALL tables? This action cannot be undone.")) {
       return;
@@ -165,29 +179,16 @@ export function PGliteOpfsManager({ dataDir, className }: PGliteOpfsManagerProps
       console.error("Error clearing all tables:", err);
       setError(`Failed to clear all tables: ${(err as Error).message}`);
     }
-  }, [db, isReady, refreshTables]);
+  }, [db, refreshTables]); // Removed isReady from dependencies
 
-  const reinitializeDatabase = useCallback(async () => {
-    if (!confirm("Are you sure you want to reinitialize the database? This will delete all data and cannot be undone.")) {
-      return;
-    }
+  // reinitializeDatabase functionality is removed as reinitializeInstance is not available.
 
-    try {
-      setError(null);
-      await reinitializeInstance();
-      setTables([]);
-    } catch (err) {
-      console.error("Error reinitializing database:", err);
-      setError(`Failed to reinitialize database: ${(err as Error).message}`);
-    }
-  }, [reinitializeInstance]);
-
-  // Auto-refresh tables when database becomes ready
+  // Auto-refresh tables when database instance becomes available or on mount
   useEffect(() => {
-    if (isReady && !isRefreshing) {
+    if (db && !isRefreshing) { // Check if db is available
       refreshTables();
     }
-  }, [isReady, refreshTables, isRefreshing]);
+  }, [db, refreshTables, isRefreshing]); // Added db to dependencies
 
   const formatFileSize = (bytes?: number) => {
     if (!bytes) return 'Unknown';
@@ -210,7 +211,7 @@ export function PGliteOpfsManager({ dataDir, className }: PGliteOpfsManagerProps
         </div>
         <button
           onClick={refreshTables}
-          disabled={isLoading || !isReady || isRefreshing}
+          disabled={!db || isRefreshing} // Check !db instead of isLoading/!isReady
           className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center space-x-2"
         >
           {isRefreshing ? (
@@ -227,8 +228,9 @@ export function PGliteOpfsManager({ dataDir, className }: PGliteOpfsManagerProps
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
           <div className="flex justify-between">
             <span className="text-gray-600 dark:text-gray-400">Status:</span>
-            <span className={`font-medium ${isReady ? 'text-green-600 dark:text-green-400' : 'text-yellow-600 dark:text-yellow-400'}`}>
-              {isLoading ? 'Loading...' : isReady ? 'Ready' : 'Not Ready'}
+            {/* Simplified status based on `db` instance availability */}
+            <span className={`font-medium ${db ? 'text-green-600 dark:text-green-400' : 'text-yellow-600 dark:text-yellow-400'}`}>
+              {db ? 'Ready' : 'Initializing...'}
             </span>
           </div>
           <div className="flex justify-between">
@@ -249,7 +251,7 @@ export function PGliteOpfsManager({ dataDir, className }: PGliteOpfsManagerProps
       {(error || dbError) && (
         <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg">
           <p className="text-sm text-red-700 dark:text-red-300">
-            {error || dbError}
+            {error} {/* Display only local errors; dbError is not available from the hook */}
           </p>
         </div>
       )}
@@ -307,7 +309,7 @@ export function PGliteOpfsManager({ dataDir, className }: PGliteOpfsManagerProps
                     <td className="px-4 py-3 text-sm">
                       <button
                         onClick={() => deleteTable(table.tableName)}
-                        disabled={!isReady}
+                      disabled={!db} // Check !db
                         className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                         title={`Delete table ${table.tableName}`}
                       >

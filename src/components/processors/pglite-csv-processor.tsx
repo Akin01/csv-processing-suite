@@ -17,8 +17,7 @@ import { ProgressDisplay } from "@/components/ui/progress-display";
 import { CsvDataTable } from "@/components/ui/csv-data-table";
 import { ErrorDisplay } from "@/components/ui/error-display";
 import { MemoryMonitor } from "@/components/ui/memory-monitor";
-// ProcessProgress seems unused, can remove if confirmed.
-// import { ProcessProgress } from "@/lib/csv-processor";
+// Removed unused ProcessProgress import comment
 
 interface PgliteCsvProcessorProps {
   className?: string;
