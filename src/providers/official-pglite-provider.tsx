@@ -27,7 +27,7 @@ export function OfficialPGliteProviderWrapper({
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
-    let workerInstance: AppPGliteInstance | undefined;
+    // let workerInstance: AppPGliteInstance | undefined; // Not needed here due to direct setPgInstance
     let isMounted = true;
 
     async function initializePGlite() {
@@ -37,24 +37,25 @@ export function OfficialPGliteProviderWrapper({
 
         const actualWorkerUrl = workerUrl || new URL('../workers/pglite-worker.ts', import.meta.url);
 
-        // PGliteWorker.create is useful if you have extensions that modify the PGliteWorker's interface
-        // For basic usage, new PGliteWorker() is also fine.
-        // Using .create() for good measure and future extension typing.
-        workerInstance = await PGliteWorker.create(
-          new Worker(actualWorkerUrl, { type: 'module' }),
+        const worker = new Worker(actualWorkerUrl, { type: 'module' });
+
+        const instance = await PGliteWorker.create(
+          worker,
           {
             dataDir: dataDir,
             debug: process.env.NODE_ENV === 'development' ? 1 : 0,
-            extensions: { live }, // Add live extension for the main thread proxy
+            extensions: { live },
           }
-        ) as AppPGliteInstance; // Cast to AppPGliteInstance
-
-        // No explicit db.waitReady is needed here as PGliteWorker.create resolves when ready.
-        // The worker's init() function handles its internal PGlite instance's waitReady.
+        ) as AppPGliteInstance;
 
         if (isMounted) {
-          setPgInstance(workerInstance);
+          setPgInstance(instance);
           setIsLoading(false);
+        } else {
+          // If component unmounted before worker was ready, terminate the worker
+          // PGliteWorker doesn't have a direct .close() or .terminate() on the proxy
+          // The actual worker instance needs to be terminated.
+          worker.terminate();
         }
       } catch (e) {
         console.error("Failed to initialize PGlite worker:", e);
@@ -69,11 +70,13 @@ export function OfficialPGliteProviderWrapper({
 
     return () => {
       isMounted = false;
-      // The PGliteWorker docs don't explicitly show a close/terminate method on the PGliteWorker instance itself
-      // for the client-side proxy. The leader election and worker lifecycle are managed internally.
-      // If direct PGlite instances were used, pgInstance?.close() would be here.
-      // For workers, browser typically handles worker termination when tabs/windows close.
-      // PGliteWorker itself handles leader changes and re-initialization if a leader tab closes.
+      // If pgInstance (PGliteWorker proxy) is available and has a way to terminate its worker, call it.
+      // Typically, the worker itself is terminated when the PGliteWorker instance is no longer needed
+      // or when the leader changes. For this provider, if it unmounts and init was in progress,
+      // the worker `worker.terminate()` in the catch or after !isMounted handles it.
+      // If pgInstance was successfully created, its underlying worker is managed by PGliteWorker's lifecycle.
+      // No explicit global "close all PGliteWorkers" seems to be standard.
+      // The line `worker.terminate()` above handles early unmount during init.
     };
   }, [dataDir, workerUrl]);
 
@@ -86,8 +89,7 @@ export function OfficialPGliteProviderWrapper({
   }
 
   if (!pgInstance) {
-    // Should not happen if not loading and no error, but as a safeguard
-    return <div>PGlite instance not available.</div>;
+    return <div>PGlite instance not available. This should not normally be reached if loading/error states are correct.</div>;
   }
 
   return (

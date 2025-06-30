@@ -2,10 +2,10 @@
 
 import { FeatureTabs } from "@/components";
 import { PgliteCsvProcessor } from "@/components/processors/pglite-csv-processor";
-// Import the new official provider wrapper
+// Restore original import path and name
 import { OfficialPGliteProviderWrapper } from "@/providers/official-pglite-provider";
 import { PGliteOpfsManager } from "@/components/ui/pglite-opfs-manager";
-import { DatabaseInfoPanel } from "@/components/ui/database-info-panel"; // Import the new component
+import { DatabaseInfoPanel } from "@/components/ui/database-info-panel";
 
 export default function PgliteCsvPage() {
   // dataDir is now primarily managed by the OfficialPGliteProviderWrapper,
@@ -13,9 +13,7 @@ export default function PgliteCsvPage() {
   const pageDataDir = "idb://pglite_csv_demo_db_official"; // Align with new provider's default or make it distinct
 
   return (
-    // Use the new OfficialPGliteProviderWrapper
-    // Pass the dataDir if you want to ensure PGliteOpfsManager and the provider use the exact same path.
-    // The OfficialPGliteProviderWrapper defaults to 'idb://pglite_csv_demo_db_official'
+    // Use the new OfficialPGliteProviderWrapper and pass dataDir prop
     <OfficialPGliteProviderWrapper dataDir={pageDataDir}>
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8 px-4">
         <div className="max-w-7xl mx-auto">
@@ -48,6 +46,6 @@ export default function PgliteCsvPage() {
           </div>
         </div>
       </div>
-    </PGliteProviderWrapper>
+    </OfficialPGliteProviderWrapper>
   );
 }

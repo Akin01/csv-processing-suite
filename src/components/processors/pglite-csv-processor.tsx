@@ -2,22 +2,21 @@
 
 import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
 // Switch to official PGlite hook
-import { usePGlite, useLiveQuery, sql } from "@electric-sql/pglite-react"; // Added useLiveQuery and sql
+import { usePGlite, useLiveQuery } from "@electric-sql/pglite-react";
 // Import getTableNameFromUrl from utils
-import { getTableNameFromUrl as getTableNameFromUrlUtil, formatProcessingTime } from "@/lib/utils";
+import { getTableNameFromUrl as getTableNameFromUrlUtil } from "@/lib/utils";
 import { CsvStreamProcessor } from "@/lib/csv-stream-processor";
 import { createCsvTableSchema, createInsertSql, csvMetadata } from "@/lib/drizzle-schema";
 import { eq } from "drizzle-orm";
-import { drizzle, PGliteDrizzle } from "drizzle-orm/pglite"; // Import drizzle
+import { drizzle } from "drizzle-orm/pglite"; // PGliteDrizzle type import removed
 // Import useDebounce hook
 import { useDebounce } from "@/hooks/useDebounce";
 import { UrlInput } from "@/components/ui/url-input";
 import { ExampleUrls } from "@/components/ui/example-urls";
 import { ProgressDisplay } from "@/components/ui/progress-display";
 import { CsvDataTable } from "@/components/ui/csv-data-table";
-import { ErrorDisplay } from "@/components/ui/error-display";
+// ErrorDisplay import removed as it's not directly used
 import { MemoryMonitor } from "@/components/ui/memory-monitor";
-// Removed unused ProcessProgress import comment
 
 interface PgliteCsvProcessorProps {
   className?: string;
@@ -159,11 +158,13 @@ export function PgliteCsvProcessor({
             }));
 
             // Create table on first batch
+            // Ensure db is not null before using it, though it should be if processCSV is called
+            if (!db) return;
             if (!state.tableName || state.rowsProcessed === 0) {
               await db.query(`DROP TABLE IF EXISTS "${tableName}";`);
 
               // Infer column types from first batch
-              const columnTypes = headers.map(header => ({ name: header, type: 'text' }));
+              const columnTypes = headers.map(header => ({ name: header, type: 'text' })); // Should use CsvColumn type if defined elsewhere
               const createTableSql = createCsvTableSchema(tableName, columnTypes);
               await db.query(createTableSql);
             }
@@ -172,12 +173,14 @@ export function PgliteCsvProcessor({
             const insertSql = createInsertSql(tableName, headers);
             await db.transaction(async (tx) => {
               for (const record of batch) {
-                const values = headers.map(header => record[header]);
+                // record is Record<string, unknown>, record[header] is unknown
+                const values = headers.map(header => record[header] as string | number | boolean | null);
                 await tx.query(insertSql, values);
               }
             });
           },
           onComplete: async (totalRows) => {
+            if (!db) return; // Ensure db is available
             const processingTime = Date.now() - startTime;
 
             // Save metadata
@@ -219,11 +222,11 @@ export function PgliteCsvProcessor({
               status: "completed",
               progress: `Successfully processed ${totalRows} rows into table '${tableName}'`,
               processingTime,
-              tableName: tableName, // Ensure tableName is set to trigger live query
+              tableName: tableName,
               currentProcessingTime: undefined,
             }));
           },
-          onError: (error) => {
+          onError: (error: Error) => { // Typed error parameter
             setState(prev => ({
               ...prev,
               status: "error",
@@ -235,7 +238,8 @@ export function PgliteCsvProcessor({
 
         await processor.process();
 
-      } catch (error: any) {
+      } catch (err: unknown) { // Changed from any to unknown
+        const error = err as Error; // Type assertion
         if (error.name === 'AbortError') {
           setState(prev => ({
             ...prev,
@@ -253,8 +257,10 @@ export function PgliteCsvProcessor({
         }
       }
     },
-    // Removed fetchTableData, added getTableNameFromUrlUtil
-    [db, drizzleDb, tableState.pageSize, state.tableName, state.rowsProcessed]
+    // getTableNameFromUrlUtil is a stable import, so it's not needed in deps.
+    // state.rowsProcessed and state.tableName are used in onBatch/onComplete which are part of CsvStreamProcessor options,
+    // if these options need to be fresh, then processCSV should be re-memoized.
+    [db, drizzleDb, state.rowsProcessed, state.tableName]
   );
 
   const cancelProcessing = useCallback(() => {
@@ -282,14 +288,29 @@ export function PgliteCsvProcessor({
         progress: "",
         data: undefined,
         error: undefined,
+        tableName: undefined, // Clear table name on successful clear
       }));
-    } catch (error: any) {
-      setState(prev => ({
-        ...prev,
-        error: `Failed to clear table: ${error.message}`,
-      }));
+    } catch (err: unknown) {
+      let messagePart: string;
+      if (err instanceof Error) {
+        messagePart = err.message;
+      } else {
+        messagePart = String(err);
+      }
+      const fullErrorMessage = `Failed to clear table: ${messagePart}`;
+      /* eslint-disable @typescript-eslint/no-explicit-any */
+      setState(prevState => {
+        const newState: ProcessingState = {
+          ...prevState,
+          status: "error",
+          progress: "",
+          error: fullErrorMessage,
+        };
+        return newState;
+      });
+      /* eslint-enable @typescript-eslint/no-explicit-any */
     }
-  }, [db, drizzleDb, state.tableName]); // Removed isDbReady
+  }, [db, drizzleDb, state.tableName]);
 
   // useEffect for fetching data manually is removed. useLiveQuery handles reactivity.
 
@@ -303,29 +324,25 @@ export function PgliteCsvProcessor({
     const offset = (tableState.currentPage - 1) * tableState.pageSize;
 
     // Base query
-    let query = sql`SELECT * FROM ${sql.ident(state.tableName)}`;
-    const params: any[] = [];
+    // Use useLiveQuery.sql instead of a separate sql import
+    let query = useLiveQuery.sql`SELECT * FROM ${useLiveQuery.sql.ident(state.tableName)}`;
 
     // Search term
-    // This part is tricky with sql tagged template if columns are dynamic.
-    // For simplicity, we might need to fetch columns first, then build this.
-    // Or, if columns are known/stable for a table, they can be hardcoded in search.
-    // For now, let's assume we have `currentColumns` populated.
     if (debouncedSearchTerm && currentColumns.length > 0) {
       const searchConditions = currentColumns
-        .map(colName => sql`${sql.ident(colName)}::text ILIKE ${`%${debouncedSearchTerm}%`}`)
-        .reduce((acc, curr, idx) => idx === 0 ? curr : sql`${acc} OR ${curr}`, sql``);
-      query = sql`${query} WHERE (${searchConditions})`;
+        .map(colName => useLiveQuery.sql`${useLiveQuery.sql.ident(colName)}::text ILIKE ${`%${debouncedSearchTerm}%`}`)
+        .reduce((acc, curr, idx) => idx === 0 ? curr : useLiveQuery.sql`${acc} OR ${curr}`, useLiveQuery.sql``);
+      query = useLiveQuery.sql`${query} WHERE (${searchConditions})`;
     }
 
     // Sorting
     if (tableState.sortColumn && currentColumns.includes(tableState.sortColumn)) {
-      const direction = tableState.sortDirection === 'desc' ? sql`DESC` : sql`ASC`;
-      query = sql`${query} ORDER BY ${sql.ident(tableState.sortColumn)} ${direction}`;
+      const direction = tableState.sortDirection === 'desc' ? useLiveQuery.sql`DESC` : useLiveQuery.sql`ASC`;
+      query = useLiveQuery.sql`${query} ORDER BY ${useLiveQuery.sql.ident(tableState.sortColumn)} ${direction}`;
     }
 
     // Pagination
-    query = sql`${query} LIMIT ${tableState.pageSize} OFFSET ${offset}`;
+    query = useLiveQuery.sql`${query} LIMIT ${tableState.pageSize} OFFSET ${offset}`;
 
     return query;
   }, [db, state.tableName, tableState, debouncedSearchTerm, currentColumns]);
@@ -358,58 +375,64 @@ export function PgliteCsvProcessor({
           rows: transformedRows,
           totalRows: totalRowsInTable, // This needs to be updated by another query
         },
-        error: undefined, // Clear previous errors if data is fetched
+        error: undefined,
       }));
     } else if (!state.tableName && state.data) {
-      // Clear data if table name is removed
-       setState(prev => ({...prev, data: undefined}));
-       setCurrentColumns([]);
+      setState(prev => ({...prev, data: undefined}));
+      setCurrentColumns([]);
     }
-  }, [liveQueryRows, liveQueryError, state.tableName, currentColumns, totalRowsInTable]);
+  // Added state.data to dependencies as per ESLint warning, though its direct impact needs care.
+  // It's included because the condition `!state.tableName && state.data` reads it.
+  }, [liveQueryRows, liveQueryError, state.tableName, currentColumns, totalRowsInTable, state.data]);
 
 
   // Effect to fetch total row count and columns when table name or search term changes
   useEffect(() => {
     if (!db || !state.tableName) {
       setTotalRowsInTable(0);
-      setCurrentColumns([]);
+      setCurrentColumns([]); // Clear columns if no table
       return;
     }
 
     const fetchMeta = async () => {
       try {
         // Fetch columns for the current table
-        const colsResult = await db.query(
+        const colsResult = await db.query<{ column_name: string }[]>(
           `SELECT column_name FROM information_schema.columns WHERE table_name = $1 ORDER BY ordinal_position;`,
           [state.tableName]
         );
-        const newColumns = colsResult.rows.map((r: any) => r.column_name);
+        const newColumns = colsResult.rows.map((r) => r.column_name);
+
         if (JSON.stringify(newColumns) !== JSON.stringify(currentColumns)) {
            setCurrentColumns(newColumns);
         }
 
         // Fetch total rows
-        let countQuery = sql`SELECT COUNT(*) as total_count FROM ${sql.ident(state.tableName)}`;
+        let countSqlString = `SELECT COUNT(*) as total_count FROM "${state.tableName}"`;
+        const countParams: unknown[] = [];
+
         if (debouncedSearchTerm && newColumns.length > 0) {
-          const searchConditions = newColumns
-            .map(colName => sql`${sql.ident(colName)}::text ILIKE ${`%${debouncedSearchTerm}%`}`)
-            .reduce((acc, curr, idx) => idx === 0 ? curr : sql`${acc} OR ${curr}`, sql``);
-          countQuery = sql`${countQuery} WHERE (${searchConditions})`;
+          const searchConditionsString = newColumns
+            .map((_colName, idx) => `"${newColumns[idx]}"::text ILIKE $${idx + 1}`)
+            .join(" OR ");
+          countSqlString += ` WHERE (${searchConditionsString})`;
+          newColumns.forEach(() => countParams.push(`%${debouncedSearchTerm}%`));
         }
 
-        const countResult = await db.query(countQuery.sql, countQuery.params);
-        setTotalRowsInTable(Number((countResult.rows[0] as any)?.total_count) || 0);
+        const countResult = await db.query<{ total_count: string | number }[]>(countSqlString, countParams);
+        setTotalRowsInTable(Number(countResult.rows[0]?.total_count) || 0);
 
       } catch (err) {
         console.error("Error fetching table metadata (count/columns):", err);
         setTotalRowsInTable(0);
-        setCurrentColumns([]);
-        // Optionally set an error state here for the user
+        // setCurrentColumns([]); // Avoid clearing columns on error if live query might still use them
+        setState(prev => ({ ...prev, error: (err as Error).message || "Error fetching table metadata"}));
       }
     };
 
     fetchMeta();
-  }, [db, state.tableName, debouncedSearchTerm, currentColumns]); // currentColumns is a dependency to re-run if it changes
+  // Re-added currentColumns to deps as per ESLint. The stringify check should prevent loops.
+  }, [db, state.tableName, debouncedSearchTerm, currentColumns]);
 
 
   // dbError and isDbLoading are not available from the official hook.

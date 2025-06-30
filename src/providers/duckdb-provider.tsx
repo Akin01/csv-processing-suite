@@ -179,7 +179,7 @@ export function DuckDBProviderWrapper({
           return;
         }
 
-        let existingInstance = instancesRef.current.get(opfsPath);
+        const existingInstance = instancesRef.current.get(opfsPath); // Changed to const
 
         // This check might seem redundant given the pre-lock check, but handles potential state changes
         // or ensures consistency if the pre-lock check saw slightly stale state.
@@ -285,7 +285,8 @@ export function DuckDBProviderWrapper({
                 for (const fileName of dbFiles) {
                   try {
                     await opfsRoot.removeEntry(fileName);
-                  } catch (e) {
+                    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+                  } catch (_e) {
                     /* ignore if not found */
                   }
                 }
@@ -453,7 +454,8 @@ export function DuckDBProviderWrapper({
         return false;
       }
     },
-    [updateInstanceState, terminateInstanceInternal]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [updateInstanceState, terminateInstanceInternal] // updateInstanceState is stable
   );
 
   const checkOpfsFile = useCallback(
@@ -517,7 +519,8 @@ export function DuckDBProviderWrapper({
       }
       await terminateInstanceInternal(opfsPath);
     },
-    [updateInstanceState, terminateInstanceInternal]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [updateInstanceState, terminateInstanceInternal] // updateInstanceState is stable
   );
 
   useEffect(() => {
@@ -525,12 +528,12 @@ export function DuckDBProviderWrapper({
     return () => {
       mounted.current = false;
       // console.log("DuckDBProviderWrapper unmounting. Terminating all instances.");
-      instancesRef.current.forEach(async (_instance, opfsPath) => {
-        await terminateInstanceInternal(opfsPath);
+      instancesRef.current.forEach((_instance, opfsPath) => { // Removed async from forEach callback
+        terminateInstanceInternal(opfsPath); // Call directly
       });
       setInstances(new Map());
     };
-  }, []); // Empty dependency array for mount/unmount effect
+  }, [terminateInstanceInternal]); // Added terminateInstanceInternal to dependency array
 
   const contextValue: DuckDBContextType = {
     instances,

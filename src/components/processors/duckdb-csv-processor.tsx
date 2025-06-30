@@ -165,12 +165,13 @@ export function DuckDbCsvProcessor({
       });
       // Optionally, clear the URL input after clearing its table
       // setUrl(\"\");
-    } catch (err: any) {
+    } catch (err: unknown) { // Changed from any to unknown
       console.error(`Error clearing table \'${tableName}\':`, err);
+      const errorMessage = err instanceof Error ? err.message : String(err);
       setState((prev) => ({
         ...prev,
         status: "error",
-        error: `Failed to clear table \'${tableName}\': ${err.message}`,
+        error: `Failed to clear table \'${tableName}\': ${errorMessage}`,
         progress: "",
       }));
     } finally {
@@ -601,15 +602,15 @@ export function DuckDbCsvProcessor({
               "CORS error: The remote server doesn't allow cross-origin requests. Try using a CORS proxy or a different URL.";
           } else if (errorMessage.includes("HTTP error")) {
             errorMessage = `Network error: ${errorMessage}. Please check the URL and try again.`;
-          } else if (errorMessage.includes("Binder")) {
+          } else if (errorMessage.includes("Binder")) { // Binder errors often mean OPFS is in a bad state or file handles are bad
             errorMessage =
-              "Table reference error: The database detected an inconsistent state and should automatically recover. Please refresh the page and try again.";
+              "Database access error (Binder): The database operation could not be completed. This might be due to an issue with the underlying file system access or database state. Try clearing the database and starting over.";
           } else if (
-            errorMessage.includes("Catalog") ||
+            errorMessage.includes("Catalog") || // Catalog errors mean table/schema not found
             errorMessage.includes("does not exist")
           ) {
             errorMessage =
-              "Database catalog error: The table reference is invalid. This often happens after database reinitialization. Please clear the database and reload your data.";
+              "Database catalog error: A required table or schema was not found. This can happen if the table was not created correctly or was deleted. Please try processing the CSV again or clearing the database.";
             // Clear the state since the table reference is invalid
             setTimeout(() => {
               setState({
@@ -617,9 +618,11 @@ export function DuckDbCsvProcessor({
                 progress: "",
                 data: undefined,
               });
-              setUrl("");
+              setUrl(""); // Clear URL as it might be causing issues or table is gone
             }, 2000);
           }
+        } else {
+           errorMessage = String(error); // Handle non-Error objects
         }
 
         setState({
