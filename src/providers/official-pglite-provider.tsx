@@ -4,11 +4,11 @@ import React, { useEffect, useState, ReactNode } from "react";
 import { PGliteWorker, PGliteInterfaceExtensions } from "@electric-sql/pglite/worker";
 import { PGliteProvider as OfficialPGliteReactProvider } from "@electric-sql/pglite-react";
 import { PGlite } from "@electric-sql/pglite";
+import { live, LiveNamespace } from "@electric-sql/pglite/live"; // Import live and its namespace type
 
 // Define a type for our PGlite instance if we add extensions later that affect the main thread proxy
-// For now, it's just the base PGlite interface as proxied by PGliteWorker
 type AppPGliteInstance = PGlite & PGliteInterfaceExtensions<{
-  // Example: live: typeof live (if we were to use the 'live' extension on the main thread)
+  live: LiveNamespace; // Add live extension type
 }>;
 
 interface OfficialPGliteProviderWrapperProps {
@@ -45,7 +45,7 @@ export function OfficialPGliteProviderWrapper({
           {
             dataDir: dataDir,
             debug: process.env.NODE_ENV === 'development' ? 1 : 0,
-            // extensions: { /* if we had main-thread proxy extensions */ }
+            extensions: { live }, // Add live extension for the main thread proxy
           }
         ) as AppPGliteInstance; // Cast to AppPGliteInstance
 

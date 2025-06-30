@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
 // Switch to official PGlite hook
-import { usePGlite } from "@electric-sql/pglite-react";
+import { usePGlite, useLiveQuery, sql } from "@electric-sql/pglite-react"; // Added useLiveQuery and sql
 // Import getTableNameFromUrl from utils
 import { getTableNameFromUrl as getTableNameFromUrlUtil, formatProcessingTime } from "@/lib/utils";
 import { CsvStreamProcessor } from "@/lib/csv-stream-processor";
@@ -90,6 +90,7 @@ export function PgliteCsvProcessor({
     sortColumn: "",
     sortDirection: "asc",
   });
+  const [totalRowsInTable, setTotalRowsInTable] = useState(0); // For pagination
 
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -111,106 +112,11 @@ export function PgliteCsvProcessor({
 
   const debouncedSearchTerm = useDebounce(tableState.searchTerm, 300);
 
-  const fetchTableData = useCallback(
-    async (
-      tableName: string,
-      options: {
-        limit?: number;
-        offset?: number;
-        searchTerm?: string;
-        sortColumn?: string;
-        sortDirection?: "asc" | "desc";
-      } = {}
-    ): Promise<CsvData | null> => {
-      if (!db) { // Check if db instance is available
-        console.warn("fetchTableData: DB instance not available.");
-        return null;
-      }
-
-      const {
-        limit = 10,
-        offset = 0,
-        searchTerm = "",
-        sortColumn = "",
-        sortDirection = "asc",
-      } = options;
-
-      try {
-        // Check if table exists
-        const tableExistsResult = await db.query(
-          `SELECT EXISTS (
-            SELECT FROM information_schema.tables
-            WHERE table_name = $1
-          );`,
-          [tableName]
-        );
-
-        if (!(tableExistsResult.rows[0] as any)?.exists) {
-          console.warn(`Table '${tableName}' does not exist.`);
-          return null;
-        }
-
-        // Get columns
-        const columnsResult = await db.query(
-          `SELECT column_name FROM information_schema.columns
-           WHERE table_name = $1 ORDER BY ordinal_position;`,
-          [tableName]
-        );
-        const columns: string[] = columnsResult.rows.map((col: any) => col.column_name);
-
-        if (columns.length === 0) {
-          return { columns: [], rows: [], totalRows: 0 };
-        }
-
-        // Build WHERE clause for search
-        let whereClause = "";
-        const queryParams: any[] = [];
-        let paramIndex = 1;
-
-        if (searchTerm.trim()) {
-          const searchConditions = columns
-            .map((col) => `CAST("${col}" AS TEXT) ILIKE $${paramIndex++}`)
-            .join(" OR ");
-          whereClause = `WHERE (${searchConditions})`;
-          columns.forEach(() => queryParams.push(`%${searchTerm.trim()}%`));
-        }
-
-        // Get total count
-        const countSql = `SELECT COUNT(*) as total_count FROM "${tableName}" ${whereClause};`;
-        const countResult = await db.query(countSql, queryParams);
-        const totalRows = Number((countResult.rows[0] as any)?.total_count) || 0;
-
-        // Build ORDER BY clause
-        let orderByClause = "";
-        if (sortColumn && columns.includes(sortColumn)) {
-          orderByClause = `ORDER BY "${sortColumn}" ${sortDirection.toUpperCase() === "DESC" ? "DESC" : "ASC"}`;
-        }
-
-        // Get data
-        const finalQueryParams = [...queryParams, limit, offset];
-        const dataSql = `
-          SELECT ${columns.map(c => `"${c}"`).join(", ")}
-          FROM "${tableName}"
-          ${whereClause}
-          ${orderByClause}
-          LIMIT $${paramIndex++} OFFSET $${paramIndex++};
-        `;
-        
-        const dataResult = await db.query(dataSql, finalQueryParams);
-        const rows = dataResult.rows.map((row: any) => columns.map(col => row[col]));
-
-        return { columns, rows, totalRows };
-      } catch (error) {
-        console.error("Error fetching table data:", error);
-        return null;
-      }
-    },
-    [db] // Removed isDbReady
-  );
+  // fetchTableData is removed, replaced by useLiveQuery and manual total count fetching.
 
   const processCSV = useCallback(
     async (csvUrl: string) => {
-      if (!db || !drizzleDb) { // Check for drizzleDb as well
+      if (!db || !drizzleDb) {
         setState(prev => ({ ...prev, status: "error", error: "Database not ready or Drizzle not initialized." }));
         return;
       }
@@ -304,17 +210,16 @@ export function PgliteCsvProcessor({
               }
             }
 
-            // Fetch initial data for display
-            const initialData = await fetchTableData(tableName, {
-              limit: tableState.pageSize
-            });
-
+            // Data will be updated by useLiveQuery.
+            // We might need to trigger a refresh or update parameters for useLiveQuery here,
+            // or ensure it naturally picks up the new table.
+            // For now, setting the tableName in state should trigger useLiveQuery re-evaluation.
             setState(prev => ({
               ...prev,
               status: "completed",
-              progress: `Successfully processed ${totalRows} rows`,
+              progress: `Successfully processed ${totalRows} rows into table '${tableName}'`,
               processingTime,
-              data: initialData || undefined,
+              tableName: tableName, // Ensure tableName is set to trigger live query
               currentProcessingTime: undefined,
             }));
           },
@@ -348,8 +253,8 @@ export function PgliteCsvProcessor({
         }
       }
     },
-    // Removed isDbReady from dependencies
-    [db, drizzleDb, fetchTableData, tableState.pageSize, state.tableName, state.rowsProcessed]
+    // Removed fetchTableData, added getTableNameFromUrlUtil
+    [db, drizzleDb, tableState.pageSize, state.tableName, state.rowsProcessed]
   );
 
   const cancelProcessing = useCallback(() => {
@@ -386,31 +291,126 @@ export function PgliteCsvProcessor({
     }
   }, [db, drizzleDb, state.tableName]); // Removed isDbReady
 
-  // Update data when search/pagination changes
-  useEffect(() => {
-    if (state.tableName && state.status === "completed") {
-      fetchTableData(state.tableName, {
-        limit: tableState.pageSize,
-        offset: (tableState.currentPage - 1) * tableState.pageSize,
-        searchTerm: debouncedSearchTerm,
-        sortColumn: tableState.sortColumn,
-        sortDirection: tableState.sortDirection,
-      }).then(data => {
-        if (data) {
-          setState(prev => ({ ...prev, data }));
-        }
-      });
+  // useEffect for fetching data manually is removed. useLiveQuery handles reactivity.
+
+  // State for columns, as useLiveQuery returns rows as objects, not arrays of arrays.
+  const [currentColumns, setCurrentColumns] = useState<string[]>([]);
+
+  // Live query for the data
+  const { results: liveQueryRows, error: liveQueryError } = useLiveQuery<{ [key: string]: any }>(() => {
+    if (!db || !state.tableName) return null; // Don't run query if no table or db
+
+    const offset = (tableState.currentPage - 1) * tableState.pageSize;
+
+    // Base query
+    let query = sql`SELECT * FROM ${sql.ident(state.tableName)}`;
+    const params: any[] = [];
+
+    // Search term
+    // This part is tricky with sql tagged template if columns are dynamic.
+    // For simplicity, we might need to fetch columns first, then build this.
+    // Or, if columns are known/stable for a table, they can be hardcoded in search.
+    // For now, let's assume we have `currentColumns` populated.
+    if (debouncedSearchTerm && currentColumns.length > 0) {
+      const searchConditions = currentColumns
+        .map(colName => sql`${sql.ident(colName)}::text ILIKE ${`%${debouncedSearchTerm}%`}`)
+        .reduce((acc, curr, idx) => idx === 0 ? curr : sql`${acc} OR ${curr}`, sql``);
+      query = sql`${query} WHERE (${searchConditions})`;
     }
-  }, [
-    state.tableName,
-    state.status,
-    tableState.pageSize,
-    tableState.currentPage,
-    debouncedSearchTerm,
-    tableState.sortColumn,
-    tableState.sortDirection,
-    fetchTableData,
-  ]);
+
+    // Sorting
+    if (tableState.sortColumn && currentColumns.includes(tableState.sortColumn)) {
+      const direction = tableState.sortDirection === 'desc' ? sql`DESC` : sql`ASC`;
+      query = sql`${query} ORDER BY ${sql.ident(tableState.sortColumn)} ${direction}`;
+    }
+
+    // Pagination
+    query = sql`${query} LIMIT ${tableState.pageSize} OFFSET ${offset}`;
+
+    return query;
+  }, [db, state.tableName, tableState, debouncedSearchTerm, currentColumns]);
+
+
+  // Effect to update local data state from live query results
+  useEffect(() => {
+    if (liveQueryError) {
+      console.error("Live query error:", liveQueryError);
+      setState(prev => ({ ...prev, status: "error", error: liveQueryError.message }));
+      return;
+    }
+    if (liveQueryRows && state.tableName) {
+      if (liveQueryRows.length > 0 && currentColumns.length === 0) {
+        // Infer columns from the first row if not already set
+        setCurrentColumns(Object.keys(liveQueryRows[0]));
+      }
+      // Transform rows from objects to arrays for CsvDataTable if needed, or update CsvDataTable
+      // For now, assuming CsvDataTable can handle array of objects if columns are provided.
+      // The original CsvData interface expected rows as (string | number | boolean | null)[][]
+      // This needs careful handling.
+      const transformedRows = liveQueryRows.map(row => currentColumns.map(col => row[col]));
+
+      setState(prev => ({
+        ...prev,
+        // status should ideally be 'completed' or 'idle' here if data is successfully fetched
+        // but let's not override processing status if it's e.g. 'inserting'
+        data: {
+          columns: currentColumns,
+          rows: transformedRows,
+          totalRows: totalRowsInTable, // This needs to be updated by another query
+        },
+        error: undefined, // Clear previous errors if data is fetched
+      }));
+    } else if (!state.tableName && state.data) {
+      // Clear data if table name is removed
+       setState(prev => ({...prev, data: undefined}));
+       setCurrentColumns([]);
+    }
+  }, [liveQueryRows, liveQueryError, state.tableName, currentColumns, totalRowsInTable]);
+
+
+  // Effect to fetch total row count and columns when table name or search term changes
+  useEffect(() => {
+    if (!db || !state.tableName) {
+      setTotalRowsInTable(0);
+      setCurrentColumns([]);
+      return;
+    }
+
+    const fetchMeta = async () => {
+      try {
+        // Fetch columns for the current table
+        const colsResult = await db.query(
+          `SELECT column_name FROM information_schema.columns WHERE table_name = $1 ORDER BY ordinal_position;`,
+          [state.tableName]
+        );
+        const newColumns = colsResult.rows.map((r: any) => r.column_name);
+        if (JSON.stringify(newColumns) !== JSON.stringify(currentColumns)) {
+           setCurrentColumns(newColumns);
+        }
+
+        // Fetch total rows
+        let countQuery = sql`SELECT COUNT(*) as total_count FROM ${sql.ident(state.tableName)}`;
+        if (debouncedSearchTerm && newColumns.length > 0) {
+          const searchConditions = newColumns
+            .map(colName => sql`${sql.ident(colName)}::text ILIKE ${`%${debouncedSearchTerm}%`}`)
+            .reduce((acc, curr, idx) => idx === 0 ? curr : sql`${acc} OR ${curr}`, sql``);
+          countQuery = sql`${countQuery} WHERE (${searchConditions})`;
+        }
+
+        const countResult = await db.query(countQuery.sql, countQuery.params);
+        setTotalRowsInTable(Number((countResult.rows[0] as any)?.total_count) || 0);
+
+      } catch (err) {
+        console.error("Error fetching table metadata (count/columns):", err);
+        setTotalRowsInTable(0);
+        setCurrentColumns([]);
+        // Optionally set an error state here for the user
+      }
+    };
+
+    fetchMeta();
+  }, [db, state.tableName, debouncedSearchTerm, currentColumns]); // currentColumns is a dependency to re-run if it changes
+
 
   // dbError and isDbLoading are not available from the official hook.
   // The OfficialPGliteProviderWrapper handles initial loading and error UI.

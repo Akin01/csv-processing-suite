@@ -1,6 +1,7 @@
 // PGLite Multi-tab Worker with Enhanced Configuration
 import { PGlite } from "@electric-sql/pglite";
 import { worker } from "@electric-sql/pglite/worker";
+import { live } from "@electric-sql/pglite/live"; // Import the live extension
 
 // Initialize PGLite with IndexedDB persistence and optimized settings
 worker({
@@ -10,6 +11,7 @@ worker({
       debug: process.env.NODE_ENV === 'development' ? 1 : 0,
       // Optimize for CSV processing
       relaxedDurability: true, // Better performance for bulk inserts
+      extensions: { live }, // Add the live extension
     });
     
     // Initialize CSV-specific configurations
