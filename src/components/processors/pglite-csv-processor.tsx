@@ -1,14 +1,14 @@
 "use client";
 
 import React, { useState, useCallback, useEffect, useRef } from "react";
-import { usePGlite } from "@/providers/pglite-provider";
+// Updated import for the official PGlite React hook
+import { usePGlite } from "@electric-sql/pglite-react";
 import { CsvStreamProcessor } from "@/lib/csv-stream-processor";
 import { createCsvTableSchema, createInsertSql } from "@/lib/drizzle-schema";
 
 interface PgliteCsvProcessorProps {
   className?: string;
-  dataDir?: string;
-  useWorker?: boolean;
+  // dataDir and useWorker are no longer used here, they are configured by the OfficialPGliteProviderWrapper
 }
 
 interface CsvData {
@@ -55,14 +55,12 @@ function useDebounce(value: string, delay: number) {
 export function PgliteCsvProcessor({
   className,
   dataDir = "idb://pglite_csv_processor_db",
-  useWorker = true,
+  // dataDir and useWorker props are removed as they are handled by the provider
 }: PgliteCsvProcessorProps) {
-  const {
-    db,
-    isLoading: isDbLoading,
-    isReady: isDbReady,
-    reinitializeInstance,
-  } = usePGlite(dataDir, useWorker);
+  // usePGlite from @electric-sql/pglite-react directly returns the db instance.
+  // isLoading and isReady are handled by the OfficialPGliteProviderWrapper's loading/error UI.
+  const db = usePGlite();
+  // reinitializeInstance is not available with the official hook directly.
 
   const [state, setState] = useState<ProcessingState>({
     status: "idle",
@@ -121,8 +119,9 @@ export function PgliteCsvProcessor({
         sortDirection?: "asc" | "desc";
       } = {}
     ): Promise<CsvData | null> => {
-      if (!db || !isDbReady) {
-        console.warn("fetchTableData: DB not ready.");
+      // Check if db instance is available
+      if (!db) {
+        console.warn("fetchTableData: DB instance not available.");
         return null;
       }
 
@@ -211,12 +210,13 @@ export function PgliteCsvProcessor({
         return null;
       }
     },
-    [db, isDbReady]
+    [db] // isDbReady removed from dependencies
   );
 
   const processUrl = useCallback(
     async (csvUrl: string) => {
-      if (!db || !isDbReady) {
+      // Check if db instance is available
+      if (!db) {
         setState({ status: "error", progress: "", error: "PGLite database not ready." });
         return;
       }
@@ -379,11 +379,12 @@ export function PgliteCsvProcessor({
         abortControllerRef.current = null;
       }
     },
-    [db, isDbReady, getTableNameFromUrl, fetchTableData, tableState.pageSize]
+    [db, getTableNameFromUrl, fetchTableData, tableState.pageSize] // isDbReady removed
   );
 
   const clearCurrentTable = useCallback(async () => {
-    if (!db || !isDbReady || !url) return;
+    // Check if db instance is available
+    if (!db || !url) return;
     const tableName = getTableNameFromUrl(url);
     setState(prev => ({ ...prev, status: "processing", progress: `Clearing table '${tableName}'...`, error: undefined, data: undefined }));
     try {
@@ -392,18 +393,14 @@ export function PgliteCsvProcessor({
     } catch (err: unknown) {
       setState(prev => ({ ...prev, status: "error", error: `Failed to clear table: ${(err as Error).message}` }));
     }
-  }, [db, isDbReady, url, getTableNameFromUrl]);
+  }, [db, url, getTableNameFromUrl]); // isDbReady removed
 
-  const clearDatabaseAndReinitialize = useCallback(async () => {
-    setState(prev => ({ ...prev, status: "processing", progress: "Reinitializing database instance...", error: undefined, data: undefined }));
-    try {
-      await reinitializeInstance();
-      setState(prev => ({ ...prev, status: "idle", progress: "Database instance reinitialized.", data: undefined, processingTime: undefined, currentProcessingTime: undefined, startTime: undefined }));
-      setUrl("");
-    } catch (err: unknown) {
-      setState(prev => ({ ...prev, status: "error", error: `Failed to reinitialize database: ${(err as Error).message}` }));
-    }
-  }, [reinitializeInstance]);
+  // const clearDatabaseAndReinitialize = useCallback(async () => {
+  //   // This functionality is removed as reinitializeInstance is not provided by the official hook.
+  //   // To re-implement, a different approach would be needed at the provider level.
+  //   console.warn("Reinitialize DB functionality has been temporarily removed.");
+  //   setState(prev => ({ ...prev, status: "idle", progress: "Reinitialize DB function not available.", error: undefined, data: undefined }));
+  // }, []);
 
 
   useEffect(() => {
@@ -489,31 +486,33 @@ export function PgliteCsvProcessor({
           <div className="flex flex-wrap gap-2">
             <button
               onClick={() => { if (url.trim()) processUrl(url); }}
-              disabled={isDbLoading || !isDbReady || state.status === "fetching" || state.status === "parsing" || state.status === "inserting" || !url.trim()}
+              disabled={!db || state.status === "fetching" || state.status === "parsing" || state.status === "inserting" || !url.trim()}
               className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {state.status === "fetching" || state.status === "parsing" || state.status === "inserting" ? "Processing..." : "Process CSV with PGLite"}
             </button>
             <button
               onClick={clearCurrentTable}
-              disabled={isDbLoading || !isDbReady || state.status === "fetching" || state.status === "parsing" || state.status === "inserting" || !url.trim() || (state.status !== "completed" && state.status !== "error" && state.status !== "idle") }
+              disabled={!db || state.status === "fetching" || state.status === "parsing" || state.status === "inserting" || !url.trim() || (state.status !== "completed" && state.status !== "error" && state.status !== "idle") }
               className="px-4 py-2 bg-yellow-500 text-white rounded-md hover:bg-yellow-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               title="Clear the table associated with the current CSV URL from PGLite"
             >
               Clear Current Table
             </button>
-            <button
+            {/* Reinitialize DB button removed as the functionality is not directly available with the official hook */}
+            {/* <button
               onClick={clearDatabaseAndReinitialize}
-              disabled={isDbLoading || !isDbReady || state.status === "fetching" || state.status === "parsing" || state.status === "inserting"}
+              disabled={!db || state.status === "fetching" || state.status === "parsing" || state.status === "inserting"}
               className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               title="Reinitialize PGLite instance (clears all tables for this dataDir)"
             >
               Reinitialize DB
-            </button>
+            </button> */}
           </div>
         </div>
 
-        {(state.status === "fetching" || state.status === "parsing" || state.status === "inserting" || state.status === "error" || state.status === "loading") && (
+        {/* The main provider now handles the initial DB loading state */}
+        {(state.status === "fetching" || state.status === "parsing" || state.status === "inserting" || state.status === "error" /* removed state.status === "loading" */) && (
           <div className="mt-6 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">

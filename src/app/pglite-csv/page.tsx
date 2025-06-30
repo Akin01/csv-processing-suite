@@ -2,15 +2,20 @@
 
 import { FeatureTabs } from "@/components";
 import { PgliteCsvProcessor } from "@/components/processors/pglite-csv-processor";
-import { PGliteProviderWrapper } from "@/providers/pglite-provider";
+// Import the new official provider wrapper
+import { OfficialPGliteProviderWrapper } from "@/providers/official-pglite-provider";
 import { PGliteOpfsManager } from "@/components/ui/pglite-opfs-manager";
 
 export default function PgliteCsvPage() {
-  // Use IndexedDB for persistent storage
-  const dataDir = "idb://pglite_csv_demo_db";
+  // dataDir is now primarily managed by the OfficialPGliteProviderWrapper,
+  // but we can define it here if we want to override its default or for other components like PGliteOpfsManager.
+  const pageDataDir = "idb://pglite_csv_demo_db_official"; // Align with new provider's default or make it distinct
 
   return (
-    <PGliteProviderWrapper>
+    // Use the new OfficialPGliteProviderWrapper
+    // Pass the dataDir if you want to ensure PGliteOpfsManager and the provider use the exact same path.
+    // The OfficialPGliteProviderWrapper defaults to 'idb://pglite_csv_demo_db_official'
+    <OfficialPGliteProviderWrapper dataDir={pageDataDir}>
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8 px-4">
         <div className="max-w-7xl mx-auto">
           <FeatureTabs />
@@ -19,22 +24,22 @@ export default function PgliteCsvPage() {
             {/* Feature Header */}
             <div className="text-center mb-8">
               <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-                PGLite CSV Processing
+                PGLite CSV Processing (Official Provider)
               </h2>
               <p className="text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">
                 Lightning-fast CSV processing using PGLite (PostgreSQL in browser). Features 
                 streaming processing, IndexedDB persistence, multi-tab worker support, and 
                 automatic gzip decompression for efficient data handling.
+                Powered by the official @electric-sql/pglite-react provider.
               </p>
             </div>
             
             <div className="space-y-8">
-              <PgliteCsvProcessor 
-                dataDir={dataDir}
-                useWorker={true}
-              />
+              {/* PgliteCsvProcessor no longer needs dataDir or useWorker props */}
+              <PgliteCsvProcessor />
               
-              <PGliteOpfsManager dataDir={dataDir} />
+              {/* PGliteOpfsManager might still need dataDir if it operates independently */}
+              <PGliteOpfsManager dataDir={pageDataDir} />
               
               {/* Database Information Panel */}
               <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 border border-gray-200 dark:border-gray-700">
@@ -49,7 +54,8 @@ export default function PgliteCsvPage() {
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-600 dark:text-gray-400">Database Path:</span>
-                      <span className="text-gray-900 dark:text-white font-mono text-xs">{dataDir}</span>
+                      {/* Display the dataDir used by the provider/page */}
+                      <span className="text-gray-900 dark:text-white font-mono text-xs">{pageDataDir}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-600 dark:text-gray-400">Worker Mode:</span>

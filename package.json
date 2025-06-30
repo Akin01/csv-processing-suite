@@ -10,7 +10,8 @@
   },
   "dependencies": {
     "@duckdb/duckdb-wasm": "1.29.1-dev132.0",
-    "@electric-sql/pglite": "^0.3.3",
+    "@electric-sql/pglite": "^0.3.4",
+    "@electric-sql/pglite-react": "^0.2.22",
     "@electric-sql/pglite-sync": "^0.3.6",
     "@types/papaparse": "^5.3.16",
     "clsx": "^2.1.1",
