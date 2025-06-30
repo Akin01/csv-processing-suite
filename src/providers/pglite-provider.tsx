@@ -140,31 +140,46 @@ export function PGliteProviderWrapper({
             }) as any; // Type assertion for compatibility
           } catch (workerError) {
             console.warn("Worker mode failed, falling back to direct mode:", workerError);
+            // Fallback to direct PGlite instance with standardized configuration
             db = new PGlite(dataDir, {
               debug: process.env.NODE_ENV === 'development' ? 1 : 0,
-              // Enable extensions for better CSV handling
+              relaxedDurability: true,
               extensions: {
-                // Add any needed extensions here
+                // Add any needed extensions here if identified in the future
               }
             });
+            await db.waitReady;
+            // Apply standardized SQL settings for direct instance
+            await db.exec(`
+              SET work_mem = '256MB';
+              SET shared_preload_libraries = '';
+              SET max_wal_size = '1GB';
+              SET checkpoint_completion_target = 0.9;
+            `);
           }
         } else {
-          // Direct mode with IndexedDB persistence
+          // Direct mode with IndexedDB persistence and standardized configuration
           db = new PGlite(dataDir, {
             debug: process.env.NODE_ENV === 'development' ? 1 : 0,
-            // Enable extensions for better CSV handling
+            relaxedDurability: true,
             extensions: {
-              // Add any needed extensions here
+              // Add any needed extensions here if identified in the future
             }
           });
+          await db.waitReady;
+          // Apply standardized SQL settings for direct instance
+          await db.exec(`
+            SET work_mem = '256MB';
+            SET shared_preload_libraries = '';
+            SET max_wal_size = '1GB';
+            SET checkpoint_completion_target = 0.9;
+          `);
         }
 
-        await db.waitReady;
-        
-        // Initialize Drizzle
-        const drizzleDb = drizzle(db);
-
-        // Create metadata table if it doesn't exist
+        // Common setup for all instances (worker proxies exec, direct executes)
+        // This includes table creation and indexes.
+        // If it's a worker, these commands are proxied.
+        // If it's direct, they run on the instance we just configured.
         await db.exec(`
           CREATE TABLE IF NOT EXISTS csv_metadata (
             id SERIAL PRIMARY KEY,
@@ -178,7 +193,12 @@ export function PGliteProviderWrapper({
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
           );
+          CREATE INDEX IF NOT EXISTS idx_csv_metadata_table_name ON csv_metadata(table_name);
+          CREATE INDEX IF NOT EXISTS idx_csv_metadata_created_at ON csv_metadata(created_at);
         `);
+
+        // Initialize Drizzle
+        const drizzleDb = drizzle(db);
 
         if (mounted.current) {
           updateInstanceState(dataDir, {
