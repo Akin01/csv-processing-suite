@@ -39,6 +39,12 @@ const nextConfig: NextConfig = {
 
     return config;
   },
+  transpilePackages: [
+    '@electric-sql/pglite',
+    '@electric-sql/pglite-react',
+    // Add other @electric-sql/pglite packages if used directly and causing issues,
+    // e.g., '@electric-sql/pglite/worker' though often covered by the main 'pglite'
+  ],
 };
 
 export default nextConfig;
