@@ -254,17 +254,5 @@ export class CsvStreamProcessor {
   }
 }
 
-// Utility to get table name from URL
-export function getTableNameFromUrl(url: string): string {
-  try {
-    const urlObj = new URL(url, window.location.origin);
-    const pathname = urlObj.pathname;
-    const filename = pathname.split('/').pop() || 'unknown_csv';
-    const nameWithoutGz = filename.replace(/\.csv\.gz$/i, '');
-    const nameWithoutCsv = nameWithoutGz.replace(/\.csv$/i, '');
-    const safeName = nameWithoutCsv.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
-    return safeName || 'csv_data';
-  } catch {
-    return 'csv_data';
-  }
-}
+// getTableNameFromUrl has been centralized in src/lib/utils.ts
+// This export is no longer needed here.
